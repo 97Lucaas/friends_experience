@@ -54,6 +54,111 @@ function save(){
   },100);
 }
 
+function portableState(){
+  state.owner.name=$("#owner-name").value.trim();
+  state.owner.birth=$("#birth-date").value;
+  return {
+    version:1,
+    owner:{name:state.owner.name,birth:state.owner.birth},
+    people:state.people.map((person,index)=>({
+      id:person.id,
+      order:person.order??index,
+      name:person.name||"",
+      color:person.color||COLORS[index%COLORS.length],
+      chapters:(person.chapters||[]).map(chapter=>({
+        kind:chapter.kind,
+        start:chapter.start||"",
+        end:chapter.end||"",
+        today:Boolean(chapter.today),
+        deceased:Boolean(chapter.deceased)
+      }))
+    }))
+  };
+}
+function normalizePortableState(input){
+  if(!input||typeof input!=="object"||Array.isArray(input))throw new Error("Format d’export invalide.");
+  if(!input.owner||typeof input.owner!=="object"||!Array.isArray(input.people))throw new Error("Le personnage principal ou les relations sont absents.");
+  const date=value=>{
+    const result=typeof value==="string"?value:"";
+    if(result&&!/^\d{4}-\d{2}-\d{2}$/.test(result))throw new Error(`Date invalide : ${result}`);
+    const parsed=result?new Date(`${result}T12:00:00`):null;
+    if(parsed&&(Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==result))throw new Error(`Date invalide : ${result}`);
+    return result;
+  };
+  const usedIds=new Set();
+  const people=input.people.map((person,index)=>{
+    if(!person||typeof person!=="object"||!Array.isArray(person.chapters))throw new Error(`Relation ${index+1} invalide.`);
+    let personId=typeof person.id==="string"&&person.id?person.id:id();
+    if(usedIds.has(personId))personId=id();
+    usedIds.add(personId);
+    const color=typeof person.color==="string"&&/^#[0-9a-f]{6}$/i.test(person.color)
+      ? person.color
+      : COLORS[index%COLORS.length];
+    return {
+      id:personId,
+      order:Number.isFinite(Number(person.order))?Number(person.order):index,
+      name:typeof person.name==="string"?person.name.slice(0,30):"",
+      color,
+      photo:"",
+      chapters:person.chapters.map((chapter,chapterIndex)=>{
+        if(!chapter||typeof chapter!=="object")throw new Error(`Chapitre ${chapterIndex+1} invalide pour ${person.name||`la relation ${index+1}`}.`);
+        const kind=["friend","love","away"].includes(chapter.kind)?chapter.kind:"friend";
+        const today=Boolean(chapter.today);
+        const deceased=!today&&Boolean(chapter.deceased);
+        return {kind,start:date(chapter.start),end:today?"":date(chapter.end),today,deceased};
+      })
+    };
+  });
+  return {
+    owner:{
+      name:typeof input.owner.name==="string"?input.owner.name.slice(0,30):"",
+      birth:date(input.owner.birth),
+      photo:""
+    },
+    people
+  };
+}
+function setTransferStatus(message,error=false){
+  const status=$("#transfer-status");
+  status.textContent=message;
+  status.classList.toggle("error",error);
+}
+async function copyTransferData(){
+  const json=JSON.stringify(portableState());
+  const field=$("#transfer-data");
+  field.value=json;
+  try{
+    await navigator.clipboard.writeText(json);
+    setTransferStatus("Données copiées dans le presse-papiers. Les photos n’ont pas été incluses.");
+  }catch{
+    field.focus();field.select();
+    const copied=document.execCommand("copy");
+    setTransferStatus(copied
+      ?"Données copiées dans le presse-papiers. Les photos n’ont pas été incluses."
+      :"L’export est prêt dans le champ : copiez-le manuellement.",!copied);
+  }
+}
+async function importTransferData(){
+  const value=$("#transfer-data").value.trim();
+  if(!value){setTransferStatus("Collez d’abord les données à importer dans le champ.",true);return}
+  let imported;
+  try{imported=normalizePortableState(JSON.parse(value))}
+  catch(error){setTransferStatus(error.message||"Impossible de lire ces données.",true);return}
+  if(!confirm("Cet import va remplacer toutes les données actuelles. Continuer ?"))return;
+  clearTimeout(saveTimer);
+  state=imported;
+  film.images.clear();
+  $("#owner-name").value=state.owner.name;$("#birth-date").value=state.owner.birth;
+  $("#owner-photo").value="";$("#owner-photo-label").textContent="Choisir une photo";
+  const list=$("#people-list");list.replaceChildren();
+  state.people.forEach(person=>list.append(personNode(person)));
+  $("#empty-state").hidden=state.people.length>0;
+  await writeState();
+  $("#transfer-data").value="";
+  setTransferStatus(`${state.people.length} relation${state.people.length>1?"s":""} importée${state.people.length>1?"s":""}. Pensez à remettre les photos.`);
+  scrollTo({top:0,behavior:"smooth"});
+}
+
 function chapterNode(person, data={kind:"friend",start:"",end:"",today:true,deceased:false}){
   data.deceased=Boolean(data.deceased);
   const node=$("#chapter-template").content.firstElementChild.cloneNode(true);
@@ -98,6 +203,8 @@ async function init(){
   state.people.forEach(p=>$("#people-list").append(personNode(p)));
   $("#empty-state").hidden=state.people.length>0;
   $("#add-person").onclick=addPerson;
+  $("#export-data").onclick=copyTransferData;
+  $("#import-data").onclick=importTransferData;
   $("#owner-name").oninput=save;$("#birth-date").oninput=save;
   $("#owner-photo").onchange=async e=>{state.owner.photo=await fileData(e.target.files[0]);$("#owner-photo-label").textContent="Photo enregistrée ✓";save()};
   $("#launch").onclick=launch;

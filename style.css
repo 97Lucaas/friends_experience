@@ -18,7 +18,7 @@ button { color:inherit; }
 h2 { font:600 31px/1.1 "Playfair Display",serif; margin:8px 0 0; }
 label { display:flex; flex-direction:column; gap:8px; color:#8f8f98; font-size:12px; }
 input,select { color:#f4f1eb; background:#0b0c11; border:1px solid #30313a; border-radius:3px; padding:12px 13px; outline:none; }
-input:focus,select:focus { border-color:#777984; }
+input:focus,select:focus,textarea:focus { border-color:#777984; }
 input[type=color] { height:43px; padding:4px; min-width:55px; }
 .photo-field input,.avatar-upload input { display:none; }
 .photo-field span { padding:12px; border:1px dashed #454650; text-align:center; cursor:pointer; color:#bab8b4; }
@@ -45,6 +45,14 @@ input[type=color] { height:43px; padding:4px; min-width:55px; }
 .add-chapter { margin-left:54px; padding:8px; font-size:12px; }
 .empty-state { text-align:center; color:#686972; padding:48px; border:1px dashed #282a32; }
 .empty-state span { color:#bd555e; }
+.transfer { display:grid; gap:18px; }
+.transfer .hint { margin:0; }
+.transfer-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.transfer .accent { border-color:#6b3942; color:#f58b95; }
+.transfer textarea { width:100%; resize:vertical; min-height:150px; color:#d9d6d0; background:#0b0c11; border:1px solid #30313a; border-radius:3px; padding:14px; outline:none; font:12px/1.55 Consolas,monospace; }
+.transfer-note { margin:0; color:#74757d; font-size:12px; }
+.transfer-status { min-height:18px; margin:0; color:#86b99d; font-size:12px; }
+.transfer-status.error { color:#ef7984; }
 .launch { display:flex; align-items:center; justify-content:space-between; padding:25px 5px; color:#75767e; font-size:12px; }
 #saved-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#62a982; margin-right:8px; }
 .film { position:fixed; inset:0; background:#06070a; z-index:20; opacity:0; visibility:hidden; transition:opacity .8s; overflow:hidden; }
@@ -83,5 +91,6 @@ input[type=color] { height:43px; padding:4px; min-width:55px; }
 @media(max-width:560px){
   .setup{width:calc(100% - 24px);padding-top:35px}.card{padding:20px}
   .identity,.person-main,.chapter{grid-template-columns:1fr}.section-title,.launch{align-items:flex-start;flex-direction:column}
+  .transfer-actions .button{width:100%}
   .avatar-upload{position:absolute}.person-main label:nth-child(2){margin-left:60px}.chapters{padding-top:22px}
 }

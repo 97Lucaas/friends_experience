@@ -49,6 +49,23 @@
         </div>
       </section>
 
+      <section class="transfer card">
+        <div>
+          <p class="step">03 — Emporter ses souvenirs</p>
+          <h2>Continuer sur un autre appareil.</h2>
+        </div>
+        <p class="hint">Exportez les prénoms, les dates et tous les chapitres de vos relations, puis collez-les sur un autre ordinateur.</p>
+        <div class="transfer-actions">
+          <button id="export-data" class="button secondary" type="button">Exporter et copier</button>
+          <button id="import-data" class="button secondary accent" type="button">Importer et remplacer</button>
+        </div>
+        <label for="transfer-data">Données à transférer
+          <textarea id="transfer-data" rows="7" spellcheck="false" placeholder="Les données exportées apparaîtront ici. Sur un autre appareil, collez-les dans ce champ puis cliquez sur « Importer et remplacer »."></textarea>
+        </label>
+        <p class="transfer-note">Les photos ne sont jamais incluses dans l’export. Il faudra les sélectionner de nouveau après l’import.</p>
+        <p id="transfer-status" class="transfer-status" aria-live="polite"></p>
+      </section>
+
       <footer class="launch">
         <p><span id="saved-dot"></span> Vos souvenirs sont enregistrés sur cet appareil.</p>
         <button id="launch" class="button primary" type="button">Voir le film <span>→</span></button>
@@ -121,6 +138,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=20260728-39"></script>
+  <script src="app.js?v=20260728-40"></script>
 </body>
 </html>
