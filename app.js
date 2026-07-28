@@ -214,7 +214,7 @@ async function init(){
 }
 
 const canvas=$("#timeline"),ctx=canvas.getContext("2d");
-let film={raf:0,launchTimer:0,openingTimer:0,endingTimer:0,birthHoldUntil:0,gapHoldUntil:0,focusHoldUntil:0,paused:false,speed:"auto",duration:18000,elapsed:0,lastFrame:0,realGap:112,heldGap:112,centerY:0,cameraMotion:0,lastFocusStrength:0,displayFocus:0,heldFocus:0,focusEvent:null,exitTail:0,now:Date.now(),images:new Map(),tracks:[],events:[],motionEvents:[],laneTransitions:new Map(),deceasedTransitions:new Map()};
+let film={raf:0,launchTimer:0,openingTimer:0,endingTimer:0,birthHoldUntil:0,gapHoldUntil:0,focusHoldUntil:0,paused:false,speed:"auto",duration:18000,elapsed:0,lastFrame:0,realGap:112,heldGap:112,centerY:0,cameraMotion:0,lastFocusStrength:0,displayFocus:0,heldFocus:0,focusEvent:null,exitTail:0,now:Date.now(),images:new Map(),tracks:[],events:[],motionEvents:[],laneTransitions:new Map(),laneHolds:new Map(),deceasedTransitions:new Map()};
 function dateNum(v){return new Date(v+"T12:00:00").getTime()}
 function resize(){canvas.width=innerWidth*devicePixelRatio;canvas.height=innerHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
 function seeded(n){const x=Math.sin(n*9321.17)*43758.5;return x-Math.floor(x)}
@@ -257,6 +257,7 @@ function buildTracks(){
   });
   film.events=[...new Set(film.events)].sort((a,b)=>a-b);
   buildLaneTransitions(birth,span);
+  buildLaneHolds(span);
   buildDeceasedTransitions(span);
 }
 function drawAvatar(track,x,y,alpha,gray,showLabel=true){
@@ -438,6 +439,47 @@ function buildLaneTransitions(birth,span){
     film.laneTransitions.set(track,guarded);
   });
 }
+function buildLaneHolds(span){
+  film.laneHolds=new Map();
+  // Correctif strictement mobile : le moteur desktop conserve exactement
+  // son comportement et ses transitions actuelles.
+  if(innerWidth>560)return;
+  const realTracks=film.tracks.filter(track=>track.real);
+  const boundaries=new Map();
+  const addBoundary=(time,id,protectedEvent=false)=>{
+    if(time>film.now)return;
+    if(!boundaries.has(time))boundaries.set(time,{ids:new Set(),protectedEvent:false});
+    const boundary=boundaries.get(time);
+    boundary.ids.add(id);
+    boundary.protectedEvent ||= protectedEvent;
+  };
+  realTracks.forEach(track=>{
+    addBoundary(track.start,track.id,track.love);
+    addBoundary(track.end,track.id,track.love);
+    if(!track.continued&&track.end<film.now-DAY)addBoundary(Math.min(film.now,track.end+film.exitTail),track.id);
+    if(track.death)addBoundary(track.death,track.id,true);
+  });
+  const ordered=[...boundaries].sort((a,b)=>a[0]-b[0]);
+  realTracks.forEach(track=>{
+    const changes=ordered
+      .filter(([time])=>time>=track.start&&time<=Math.min(film.now,track.personEnd+film.exitTail))
+      .map(([time,boundary])=>({time,...boundary,from:rawSlot(track,time-1),to:rawSlot(track,time+1)}))
+      .filter(change=>Math.abs(change.from-change.to)>.001);
+    const holds=[];
+    for(let i=0;i<changes.length-1;i++){
+      const current=changes[i],next=changes[i+1];
+      const returnsToOrigin=Math.abs(current.from-next.to)<.001;
+      const brief=next.time-current.time<=span*.025;
+      const concernsTrack=current.ids.has(track.id)||next.ids.has(track.id);
+      const cinematicEvent=current.protectedEvent||next.protectedEvent;
+      if(returnsToOrigin&&brief&&!concernsTrack&&!cinematicEvent){
+        holds.push({start:current.time,end:next.time,slot:current.from});
+        i++;
+      }
+    }
+    film.laneHolds.set(track.id,holds);
+  });
+}
 function buildDeceasedTransitions(span){
   film.deceasedTransitions=new Map();
   const realTracks=film.tracks.filter(track=>track.real);
@@ -513,6 +555,8 @@ function smoothSlot(track,time){
   if(track.love&&time>=track.start&&time<=track.end&&!transition?.loveTransition){
     return rawSlot(track,time);
   }
+  const laneHold=(film.laneHolds.get(track.id)||[]).find(item=>time>=item.start&&time<=item.end);
+  if(laneHold)return laneHold.slot;
   if(transition){
     if(time<=transition.start)return transition.from;
     const q=Math.max(0,Math.min(1,(time-transition.start)/(transition.end-transition.start)));
@@ -705,6 +749,20 @@ function draw(t){
       drawAvatar(r,endX,livingY,fade*.78,true,true);
     }else if(!(r.continued&&current>r.end))drawAvatar(r,endX,avatarY,fade*(r.real?1:.002),r.end<current-DAY);
   });
+  drawAvatar({id:"owner",name:state.owner.name,color:"#e8e4dc",real:true},W/2,centerY,1,false);
+  ctx.fillStyle="#aaa8a3";ctx.font="12px DM Sans";ctx.textAlign="left";ctx.fillText(`${Math.max(0,Math.floor((current-birth)/(365.2425*DAY)))} ans`,W/2+32,centerY+20);
+  if(holdingBirth){
+    ctx.save();ctx.fillStyle="#e8e4dc";ctx.font="600 11px DM Sans";ctx.textAlign="center";
+    ctx.fillText("NAISSANCE",W/2,centerY-52);ctx.restore();
+  }
+  if(p>.982){
+    const todayAlpha=Math.min(1,(p-.982)/.012);
+    ctx.save();ctx.globalAlpha=todayAlpha;ctx.strokeStyle="#f05d69";ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(W/2,H-92);ctx.lineTo(W/2,H-62);ctx.stroke();
+    ctx.fillStyle="#f05d69";ctx.font="600 10px DM Sans";ctx.textAlign="center";ctx.fillText("AUJOURD’HUI",W/2,H-101);ctx.restore();
+  }
+  // Les symboles amoureux sont dessinés en dernier dans le canvas afin de
+  // rester devant chaque profil, y compris celui du propriétaire.
   const lover=active.find(r=>r.real&&r.love);
   const loverTransition=lover&&(film.laneTransitions.get(lover)||[])
     .find(item=>item.loveTransition&&current>=item.hold&&current<=item.end);
@@ -727,18 +785,6 @@ function draw(t){
     const eventX=W/2+(breakup.time-current)*pxPerMs;
     ctx.save();ctx.globalAlpha=Math.max(0,1-q);ctx.font=`${24+8*Math.sin(Math.PI*q)}px serif`;ctx.textAlign="center";
     ctx.shadowColor="#ff6684";ctx.shadowBlur=14;ctx.fillText("💔",(W/2+eventX)/2,(centerY+formerY)/2+7);ctx.restore();
-  }
-  drawAvatar({id:"owner",name:state.owner.name,color:"#e8e4dc",real:true},W/2,centerY,1,false);
-  ctx.fillStyle="#aaa8a3";ctx.font="12px DM Sans";ctx.textAlign="left";ctx.fillText(`${Math.max(0,Math.floor((current-birth)/(365.2425*DAY)))} ans`,W/2+32,centerY+20);
-  if(holdingBirth){
-    ctx.save();ctx.fillStyle="#e8e4dc";ctx.font="600 11px DM Sans";ctx.textAlign="center";
-    ctx.fillText("NAISSANCE",W/2,centerY-52);ctx.restore();
-  }
-  if(p>.982){
-    const todayAlpha=Math.min(1,(p-.982)/.012);
-    ctx.save();ctx.globalAlpha=todayAlpha;ctx.strokeStyle="#f05d69";ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(W/2,H-92);ctx.lineTo(W/2,H-62);ctx.stroke();
-    ctx.fillStyle="#f05d69";ctx.font="600 10px DM Sans";ctx.textAlign="center";ctx.fillText("AUJOURD’HUI",W/2,H-101);ctx.restore();
   }
   ctx.restore();
   const currentDate=new Date(current);
