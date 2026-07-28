@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#08090d">
+  <title>Friends — ceux qui restent</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <section id="setup" class="setup">
+      <header class="hero">
+        <p class="eyebrow">UN COURT-MÉTRAGE DONT VOUS ÊTES LA MÉMOIRE</p>
+        <h1>Friends<span>.</span></h1>
+        <p class="intro">Une vie est traversée par des centaines de visages.<br>Certains ne font que passer. D’autres restent.</p>
+      </header>
+
+      <form id="identity-form" class="identity card">
+        <div>
+          <p class="step">01 — Le personnage principal</p>
+          <h2>Commençons par vous.</h2>
+        </div>
+        <label>Votre prénom
+          <input id="owner-name" required maxlength="30" placeholder="Lucas">
+        </label>
+        <label>Date de naissance
+          <input id="birth-date" required type="date">
+        </label>
+        <label class="photo-field">Votre portrait
+          <input id="owner-photo" type="file" accept="image/*">
+          <span id="owner-photo-label">Choisir une photo</span>
+        </label>
+      </form>
+
+      <section class="relations card">
+        <div class="section-title">
+          <div>
+            <p class="step">02 — Les présences</p>
+            <h2>Qui a traversé votre vie&nbsp;?</h2>
+          </div>
+          <button id="add-person" class="button secondary" type="button">+ Ajouter quelqu’un</button>
+        </div>
+        <p class="hint">Une même personne peut avoir plusieurs chapitres : amitié, amour ou absence.</p>
+        <div id="people-list" class="people-list"></div>
+        <div id="empty-state" class="empty-state">
+          <span>✦</span>
+          <p>Ajoutez les visages qui comptent.<br>Les autres seront seulement de passage.</p>
+        </div>
+      </section>
+
+      <footer class="launch">
+        <p><span id="saved-dot"></span> Vos souvenirs sont enregistrés sur cet appareil.</p>
+        <button id="launch" class="button primary" type="button">Voir le film <span>→</span></button>
+      </footer>
+    </section>
+
+    <section id="film" class="film" aria-hidden="true">
+      <canvas id="timeline"></canvas>
+      <div class="film-grain"></div>
+      <div class="film-top">
+        <button id="back" type="button" aria-label="Retour à l’édition">← Éditer</button>
+        <p id="film-date"><span id="film-year">1998</span><span id="film-month">janvier</span></p>
+        <span class="silent-label">FILM SILENCIEUX</span>
+      </div>
+      <div id="opening" class="opening">
+        <p>Voici l’histoire de</p>
+        <h2 id="opening-name"></h2>
+      </div>
+      <div id="ending" class="ending">
+        <p>Et puis le temps s’arrête.</p>
+        <h2>Seuls les meilleurs<br><em>sont restés.</em></h2>
+        <p id="thanks"></p>
+        <div id="ending-faces" class="ending-faces" aria-label="Les personnes qui sont restées"></div>
+        <button id="replay" class="button ghost" type="button">Revoir l’histoire ↻</button>
+      </div>
+      <div class="film-bottom">
+        <button id="play-toggle" type="button">Ⅱ</button>
+        <div class="progress"><i id="progress-bar"></i></div>
+        <select id="speed" aria-label="Vitesse">
+          <option value="0.32">Lent</option>
+          <option value="auto" selected>Cinéma auto</option>
+          <option value="1.7">Rapide</option>
+        </select>
+      </div>
+    </section>
+  </main>
+
+  <template id="person-template">
+    <article class="person">
+      <div class="person-main">
+        <label class="avatar-upload">
+          <input class="person-photo" type="file" accept="image/*">
+          <span class="avatar-preview">+</span>
+        </label>
+        <label>Prénom
+          <input class="person-name" maxlength="30" placeholder="Camille">
+        </label>
+        <label>Couleur
+          <input class="person-color" type="color">
+        </label>
+        <button class="remove-person" type="button" aria-label="Supprimer">×</button>
+      </div>
+      <div class="chapters"></div>
+      <button class="add-chapter" type="button">+ Ajouter un chapitre</button>
+    </article>
+  </template>
+
+  <template id="chapter-template">
+    <div class="chapter">
+      <select class="chapter-kind" aria-label="Type de relation">
+        <option value="friend">Amitié</option>
+        <option value="love">Amour ♥</option>
+        <option value="away">Éloignement</option>
+      </select>
+      <label>Du <input class="chapter-start" type="date"></label>
+      <label>Au <input class="chapter-end" type="date"></label>
+      <label class="today-check"><input class="chapter-today" type="checkbox"> Aujourd’hui</label>
+      <label class="deceased-check"><input class="chapter-deceased" type="checkbox"> Décédé·e</label>
+      <button class="remove-chapter" type="button" aria-label="Supprimer le chapitre">×</button>
+    </div>
+  </template>
+
+  <script src="app.js?v=20260728-39"></script>
+</body>
+</html>
