@@ -348,13 +348,33 @@ function buildLaneTransitions(birth,span){
         hold=group.time;start=group.time;end=group.time+span*.018;
         freezeFrom=hold;
       }
+      // Après un départ récent sur le même côté, laisser un petit espace
+      // avant le début d'un rabattement déclenché par une arrivée ou une
+      // rupture. Les autres événements et la courbe d'animation restent inchangés.
+      if(types.includes("enter")||types.includes("loveEnd")){
+        const recentDeparture=film.motionEvents
+          .filter(event=>event.track.id!==track.id
+            && Math.sign(event.track.slot||1)===Math.sign(track.slot||1)
+            && (event.type==="leave"||(event.type==="loveEnd"&&!event.track.continued))
+            && event.time<=group.time && event.time>=group.time-span*.018)
+          .reduce((latest,event)=>Math.max(latest,event.time),-Infinity);
+        if(Number.isFinite(recentDeparture)){
+          const delayedStart=Math.min(group.time+span*.004,recentDeparture+span*.002);
+          start=Math.max(start,delayedStart);
+          if(types.includes("enter"))hold=start;
+          end=Math.max(end,start+span*.008);
+        }
+      }
       const loveTransition=group.events.some(event=>event.type==="loveStart"&&event.track.id===track.id);
       const deathTransition=types.includes("death");
+      const ownDeath=group.events.some(event=>event.type==="death"&&event.track.id===track.id);
+      const departingPartner=group.events.some(event=>event.type==="loveEnd"&&!event.track.continued
+        &&Math.sign(event.track.slot||1)===Math.sign(track.slot||1));
       const departureDriven=types.includes("leave");
       const entryDriven=types.includes("enter");
       const protectedTransition=types.some(type=>["loveStart","loveEnd","death"].includes(type));
       if(Math.abs(from-to)<.001&&!reservation)return;
-      transitions.push({time:group.time,freezeFrom,hold,start,end,from,to,loveTransition,deathTransition,departureDriven,entryDriven,protectedTransition,reservation,reservationUntil});
+      transitions.push({time:group.time,freezeFrom,hold,start,end,from,to,loveTransition,deathTransition,ownDeath,departingPartner,departureDriven,entryDriven,protectedTransition,reservation,reservationUntil});
     });
     // Deux mouvements proches se rejoignent à une frontière commune au lieu
     // de se superposer et de produire des zigzags.
@@ -374,6 +394,12 @@ function buildLaneTransitions(birth,span){
       }
       if(previous&&current.hold<previous.end){
         if(current.deathTransition){
+          // Si le décès interrompt la sortie du partenaire, ne pas rabattre
+          // brièvement le défunt sur la piste encore occupée par ce dernier.
+          if(current.ownDeath&&previous.departingPartner&&current.time<previous.time+film.exitTail){
+            previous.to=previous.from;
+            previous.holdForDeath=true;
+          }
           previous.end=Math.min(previous.end,current.time);
           previous.start=Math.min(previous.start,previous.end);
           current.freezeFrom=current.time;
@@ -426,7 +452,7 @@ function buildLaneTransitions(birth,span){
       const current={...item},previous=guarded.at(-1);
       if(current.reservation&&current.hold>=film.now)return;
       if(previous&&current.hold<=previous.end+1)current.from=previous.to;
-      if(!current.reservation&&Math.abs(current.from-current.to)<.001)return;
+      if(!current.reservation&&!current.holdForDeath&&Math.abs(current.from-current.to)<.001)return;
       if(Math.abs(current.from-current.to)>=.001){
         const minimumDuration=current.loveTransition
           ? span*.002
@@ -496,7 +522,9 @@ function buildDeceasedTransitions(span){
       .filter(item=>item.time>=track.death&&item.time<=film.now)
       .map(item=>({
         ...item,
-        from:rawSlot(track,item.time-1),
+        from:item.type==="death"
+          ? (film.laneTransitions.get(track)||[]).find(transition=>transition.holdForDeath&&transition.end===item.time)?.to??rawSlot(track,item.time-1)
+          : rawSlot(track,item.time-1),
         to:rawSlot(track,item.time+1)
       }))
       .filter(item=>Math.abs(item.from-item.to)>.001);
