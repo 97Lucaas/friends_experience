@@ -751,6 +751,17 @@ function draw(t){
   ctx.strokeStyle="#ddd9d0";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(Math.max(-20,selfStartX),centerY);ctx.lineTo(W/2,centerY);ctx.stroke();
   // tracks: active ends at playhead; finished slides left
   const active=film.tracks.filter(r=>r.start<=current&&r.end>=current);
+  // Mémoriser uniquement le bout réellement dessiné à chaque instant. Cela
+  // ne change ni les pistes ni le cadrage pendant le film.
+  active.filter(track=>track.real).forEach(track=>{
+    const laneY=centerY+smoothSlot(track,current)*realGap;
+    const y=entryTrackY(track,current,laneY,span);
+    const samples=film.overviewSamples.get(track)||[];
+    if(!samples.length||current>samples[samples.length-1].time){
+      samples.push({time:current,slot:(y-centerY)/realGap});
+      film.overviewSamples.set(track,samples);
+    }
+  });
   const orderedTracks=[...film.tracks].sort((a,b)=>Number(a.real)-Number(b.real));
   orderedTracks.forEach(r=>{
     if(r.start>current)return;
@@ -819,11 +830,137 @@ function draw(t){
   $("#film-year").textContent=currentDate.getFullYear();
   $("#film-month").textContent=currentDate.toLocaleDateString("fr-FR",{month:"long"});
   $("#progress-bar").style.width=`${p*100}%`;
-  if(p>=1){cancelAnimationFrame(film.raf);clearTimeout(film.endingTimer);film.endingTimer=setTimeout(()=>$("#ending").classList.add("show"),3000);return}
+  if(p>=1){prepareOverview();film.overviewStart=0;film.overviewProgress=0;film.overviewLast=0;film.overviewActive=true;film.raf=requestAnimationFrame(drawOverview);return}
   film.raf=requestAnimationFrame(draw);
+}
+function prepareOverview(){
+  const birth=dateNum(state.owner.birth);
+  const tracks=film.tracks.filter(track=>track.real&&track.start<=film.now).sort((a,b)=>a.start-b.start);
+  const geometry=new Map();
+  tracks.forEach(track=>{
+    const start=Math.max(birth,track.start),end=Math.min(film.now,track.end);
+    if(end<start)return;
+    const points=(film.overviewSamples.get(track)||[]).filter(point=>point.time>=start&&point.time<=end).map(point=>({...point}));
+    if(!points.length)points.push({time:start,slot:smoothSlot(track,start)});
+    const preceding=track.continuesFromPrevious&&tracks.find(other=>other!==track&&other.id===track.id&&Math.abs(other.end-track.start)<DAY*2&&geometry.has(other));
+    const previousPoints=preceding&&geometry.get(preceding);
+    const firstSlot=previousPoints?.length?previousPoints[previousPoints.length-1].slot:points[0].slot;
+    if(points[0].time>start)points.unshift({time:start,slot:firstSlot});
+    else if(previousPoints?.length)points[0].slot=firstSlot;
+    if(points[points.length-1].time<end)points.push({time:end,slot:points[points.length-1].slot});
+    geometry.set(track,points);
+  });
+  film.overviewGeometry=geometry;
+}
+// Essai de conclusion : rendu séparé, sans modifier le moteur du film.
+function drawOverview(t){
+  if(!film.overviewActive)return;
+  if(!film.overviewLast)film.overviewLast=t;
+  if(!film.paused)film.overviewProgress=Math.min(1,film.overviewProgress+Math.min(50,t-film.overviewLast)/3500);
+  film.overviewLast=t;
+  const q=film.overviewProgress,ease=q*q*(3-2*q),W=innerWidth,H=innerHeight;
+  const birth=dateNum(state.owner.birth),span=film.now-birth;
+  if(span<=0)return;
+  const tracks=film.tracks.filter(track=>track.real&&track.start<=film.now);
+  const present=new Set(state.people.filter(person=>person.chapters.some(chapter=>(chapter.today||chapter.deceased)&&chapter.kind!=="away")).map(person=>person.id));
+  // Décalage limité et constant par personne, uniquement dans le résumé :
+  // deux tracés qui utilisent successivement la même piste restent distincts.
+  const peopleIds=[...new Set(tracks.map(track=>track.id))];
+  const separation=Math.min(2.5,36/Math.max(1,peopleIds.length-1));
+  const offsets=new Map(peopleIds.map((id,index)=>[id,(index-(peopleIds.length-1)/2)*separation]));
+  const trackOffset=track=>(offsets.get(track.id)||0)*ease;
+  let minSlot=0,maxSlot=0;
+  tracks.forEach(track=>{
+    (film.overviewGeometry.get(track)||[]).forEach(point=>{
+      minSlot=Math.min(minSlot,point.slot);maxSlot=Math.max(maxSlot,point.slot);
+    });
+  });
+  const top=115,bottom=Math.max(top+40,H-165),available=bottom-top;
+  const finalGap=Math.min(70,available/Math.max(1,maxSlot-minSlot));
+  const finalCenter=top+(available-(maxSlot-minSlot)*finalGap)/2-minSlot*finalGap;
+  const center=film.centerY+(finalCenter-film.centerY)*ease;
+  const gap=film.realGap+(finalGap-film.realGap)*ease;
+  const margin=Math.min(80,W*.1),rightMargin=Math.min(135,W*.2),startScale=W*.78/(span*.115),endScale=(W-margin-rightMargin)/span;
+  const scale=startScale+(endScale-startScale)*ease;
+  const endpoint=W/2+(W-rightMargin-W/2)*ease;
+  const xAt=time=>endpoint+(time-film.now)*scale;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle="#07080b";ctx.fillRect(0,0,W,H);
+  ctx.save();ctx.lineCap="round";ctx.lineJoin="round";
+  ctx.strokeStyle="#ddd9d0";ctx.globalAlpha=.7;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(xAt(birth),center);ctx.lineTo(endpoint,center);ctx.stroke();
+  const path=(track,dashed)=>{
+    const points=film.overviewGeometry.get(track)||[];
+    if(points.length<2)return;
+    ctx.beginPath();
+    let drawing=false;
+    points.forEach((point,index)=>{
+      const inPart=track.death?dashed?point.time>=track.death:point.time<=track.death:!dashed;
+      if(!inPart){
+        const previous=points[index-1];
+        if(drawing&&!dashed&&previous&&track.death&&previous.time<track.death&&point.time>track.death){
+          const fraction=(track.death-previous.time)/(point.time-previous.time);
+          ctx.lineTo(xAt(track.death),center+(previous.slot+(point.slot-previous.slot)*fraction)*gap+trackOffset(track));
+        }
+        drawing=false;return;
+      }
+      const x=xAt(point.time),y=center+point.slot*gap+trackOffset(track);
+      if(!drawing){
+        const previous=points[index-1];
+        if(previous&&track.death&&dashed&&previous.time<track.death){
+          const fraction=(track.death-previous.time)/(point.time-previous.time);
+          ctx.moveTo(xAt(track.death),center+(previous.slot+(point.slot-previous.slot)*fraction)*gap+trackOffset(track));
+        }else ctx.moveTo(x,y);
+        drawing=true;
+      }
+      ctx.lineTo(x,y);
+    });
+    ctx.setLineDash(dashed?[5,6]:[]);ctx.stroke();ctx.setLineDash([]);
+  };
+  tracks.forEach(track=>{
+    const to=Math.min(film.now,track.end),highlight=present.has(track.id);
+    const faded=track.end<film.now?Math.max(0,Math.min(1,(xAt(track.end)+90)/140)):1;
+    ctx.globalAlpha=faded+(1-faded)*ease*(highlight?1:.22);
+    ctx.strokeStyle=track.color;ctx.lineWidth=highlight?2+ease*1.8:1.25;
+    ctx.shadowColor=track.color;ctx.shadowBlur=highlight?22*ease:0;
+    path(track,false);if(track.death&&track.death<to)path(track,true);
+    ctx.shadowBlur=0;
+  });
+  // Un portrait au bout du dernier chapitre de chaque personne.
+  const lastTracks=[...new Map(tracks.slice().sort((a,b)=>a.end-b.end).map(track=>[track.id,track])).values()];
+  lastTracks.forEach(track=>{
+    const points=film.overviewGeometry.get(track),last=points?.[points.length-1];
+    if(!last)return;
+    const x=xAt(last.time),y=center+last.slot*gap+trackOffset(track),radius=Math.max(9,Math.min(16,gap*.3));
+    const remembered=present.has(track.id),gray=!remembered||Boolean(track.death);
+    ctx.save();ctx.globalAlpha=ease;ctx.beginPath();ctx.arc(x,y,radius,0,Math.PI*2);ctx.clip();
+    const image=film.images.get(track.id);
+    if(image?.complete&&image.naturalWidth){if(gray)ctx.filter="grayscale(1)";ctx.drawImage(image,x-radius,y-radius,radius*2,radius*2)}
+    else{ctx.fillStyle=gray?"#777982":track.color;ctx.fillRect(x-radius,y-radius,radius*2,radius*2);ctx.fillStyle="#111";ctx.font="600 10px DM Sans";ctx.textAlign="center";ctx.fillText((track.name[0]||"•").toUpperCase(),x,y+3)}
+    ctx.restore();
+    ctx.save();ctx.globalAlpha=ease;ctx.strokeStyle=gray?"#92939a":track.color;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,radius+1,0,Math.PI*2);ctx.stroke();
+    if(remembered){ctx.fillStyle="#e5e1d9";ctx.font="600 10px DM Sans";ctx.textAlign="left";ctx.fillText(track.name,Math.min(W-70,x+radius+5),y+3)}ctx.restore();
+  });
+  ctx.globalAlpha=ease;ctx.shadowBlur=0;
+  ctx.fillStyle="#aaa8a3";ctx.font="11px DM Sans";ctx.textAlign="left";
+  ctx.fillText(String(new Date(birth).getFullYear()),margin, H-105);
+  ctx.textAlign="right";ctx.fillText("AUJOURD’HUI",W-rightMargin,H-105);
+  ctx.restore();
+  if(q<1&&!film.paused)film.raf=requestAnimationFrame(drawOverview);
+  else if(q>=1){
+    const button=$("#show-ending");
+    if(button.hidden){
+      button.hidden=false;button.classList.add("counting");
+      film.endingTimer=setTimeout(showEnding,6000);
+    }
+    $("#play-toggle").textContent="▶";
+  }
+}
+function showEnding(){
+  clearTimeout(film.endingTimer);film.endingTimer=0;
+  $("#ending").classList.add("show");
 }
 function startFilm(){
   cancelAnimationFrame(film.raf);clearTimeout(film.openingTimer);clearTimeout(film.endingTimer);$("#ending").classList.remove("show");$("#opening").classList.remove("hidden");
+  film.overviewActive=false;film.overviewSamples=new Map();film.overviewGeometry=new Map();$("#show-ending").hidden=true;$("#show-ending").classList.remove("counting");$("#play-toggle").textContent="Ⅱ";
   film.speed=$("#speed").value;film.paused=false;film.elapsed=0;film.lastFrame=0;film.realGap=112;film.heldGap=112;film.centerY=0;film.cameraMotion=0;film.lastFocusStrength=0;film.displayFocus=0;film.heldFocus=0;film.focusEvent=null;film.gapHoldUntil=0;film.focusHoldUntil=0;film.birthHoldUntil=0;
   film.openingTimer=setTimeout(()=>{
     $("#opening").classList.add("hidden");film.lastFrame=0;film.birthHoldUntil=performance.now()+2000;
@@ -857,10 +994,11 @@ function launch(){
 }
 function closeFilm(){
   cancelAnimationFrame(film.raf);clearTimeout(film.launchTimer);clearTimeout(film.openingTimer);clearTimeout(film.endingTimer);
-  $("#ending").classList.remove("show");$("#opening").classList.add("hidden");
+  film.overviewActive=false;$("#show-ending").hidden=true;$("#show-ending").classList.remove("counting");$("#ending").classList.remove("show");$("#opening").classList.add("hidden");
   $("#film").classList.remove("active");$("#film").setAttribute("aria-hidden","true");document.body.classList.remove("watching");
 }
-$("#play-toggle").onclick=()=>{if(film.paused){film.paused=false;film.lastFrame=0;film.raf=requestAnimationFrame(draw);$("#play-toggle").textContent="Ⅱ"}else{film.paused=true;cancelAnimationFrame(film.raf);$("#play-toggle").textContent="▶"}};
+$("#show-ending").onclick=showEnding;
+$("#play-toggle").onclick=()=>{if(film.overviewActive&&film.overviewProgress>=1)return;if(film.paused){film.paused=false;film.lastFrame=0;film.overviewLast=0;film.raf=requestAnimationFrame(film.overviewActive?drawOverview:draw);$("#play-toggle").textContent="Ⅱ"}else{film.paused=true;cancelAnimationFrame(film.raf);$("#play-toggle").textContent="▶"}};
 $("#speed").onchange=()=>film.speed=$("#speed").value;
-addEventListener("resize",resize);
+addEventListener("resize",()=>{resize();if(film.overviewActive&&(film.paused||film.overviewProgress>=1))drawOverview(performance.now())});
 init();
